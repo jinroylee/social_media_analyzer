@@ -1,136 +1,58 @@
-"""
-FastAPI application for serving social media engagement prediction model.
-"""
-import os
-import io
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List, Optional
+from io import BytesIO
 import base64
-from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-import uvicorn
+import torch
+import math
 from PIL import Image
-import numpy as np
+from transformers import CLIPProcessor, CLIPTokenizer, CLIPModel, pipeline
+from models.clip_regressor import CLIPEngagementRegressor
 
-from serving.predictor import ModelPredictor
+app = FastAPI()
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Social Media Engagement Predictor",
-    description="API for predicting engagement on social media posts",
-    version="1.0.0"
-)
+# Load models and processors
+clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+sentiment_pipeline = pipeline("sentiment-analysis")
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+model = CLIPEngagementRegressor()
+model.load_state_dict(torch.load("models/clip_engagement_model.pt", map_location=torch.device("cpu")))
+model.eval()
 
-# Model request/response schemas
-class PredictionRequest(BaseModel):
-    caption: str = Field(..., description="The caption or text of the social media post")
-    image_b64: Optional[str] = Field(None, description="Base64 encoded image data")
+class PredictRequest(BaseModel):
+    thumbnail: str  # base64 encoded
+    description: str
+    top_comments: Optional[List[str]] = None
 
-class PredictionResponse(BaseModel):
-    engagement_score: float = Field(..., description="Predicted engagement score")
-    confidence: Optional[float] = Field(None, description="Confidence score for the prediction")
-    feature_importance: Optional[Dict[str, float]] = Field(None, description="Feature importance scores if available")
+class PredictResponse(BaseModel):
+    engagement_score: float
 
-# Dependency for the model predictor
-def get_predictor():
-    return ModelPredictor()
+@app.post("/predict", response_model=PredictResponse)
+def predict(payload: PredictRequest):
+    # Decode image
+    image_data = base64.b64decode(payload.thumbnail)
+    image = Image.open(BytesIO(image_data)).convert("RGB")
+    image_inputs = clip_processor(images=image, return_tensors="pt")
+    img_tensor = image_inputs["pixel_values"]
 
-# Healthcheck endpoint
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+    # Tokenize text
+    full_text = payload.description
+    if payload.top_comments:
+        full_text += " " + " ".join(payload.top_comments)
+    text_inputs = clip_tokenizer(full_text, truncation=True, max_length=77, return_tensors="pt")
+    input_ids = text_inputs["input_ids"]
+    attention_mask = text_inputs["attention_mask"]
 
-# Prediction endpoint for JSON
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest, predictor: ModelPredictor = Depends(get_predictor)):
-    try:
-        # Decode image if provided
-        image = None
-        if request.image_b64:
-            image_data = base64.b64decode(request.image_b64)
-            image = Image.open(io.BytesIO(image_data))
-        
-        # Make prediction
-        prediction = predictor.predict(request.caption, image)
-        
-        return PredictionResponse(
-            engagement_score=prediction["engagement_score"],
-            confidence=prediction.get("confidence"),
-            feature_importance=prediction.get("feature_importance")
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+    # Sentiment
+    sent = sentiment_pipeline(full_text[:512])[0]
+    sentiment_score = sent['score'] if sent['label'] == "POSITIVE" else -sent['score']
+    sentiment_tensor = torch.tensor([[sentiment_score]], dtype=torch.float32)
 
-# Prediction endpoint for multipart form data (file upload)
-@app.post("/predict_upload", response_model=PredictionResponse)
-async def predict_upload(
-    caption: str = Form(...),
-    image: Optional[UploadFile] = File(None),
-    predictor: ModelPredictor = Depends(get_predictor)
-):
-    try:
-        # Process image if provided
-        img = None
-        if image:
-            img_data = await image.read()
-            img = Image.open(io.BytesIO(img_data))
-        
-        # Make prediction
-        prediction = predictor.predict(caption, img)
-        
-        return PredictionResponse(
-            engagement_score=prediction["engagement_score"],
-            confidence=prediction.get("confidence"),
-            feature_importance=prediction.get("feature_importance")
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+    with torch.no_grad():
+        pred_log = model(img_tensor, input_ids, attention_mask, sentiment_tensor)
+    engagement_pred = math.exp(pred_log.item()) - 1.0
 
-# Batch prediction endpoint
-@app.post("/predict_batch", response_model=List[PredictionResponse])
-async def predict_batch(requests: List[PredictionRequest], predictor: ModelPredictor = Depends(get_predictor)):
-    results = []
-    
-    for request in requests:
-        try:
-            # Decode image if provided
-            image = None
-            if request.image_b64:
-                image_data = base64.b64decode(request.image_b64)
-                image = Image.open(io.BytesIO(image_data))
-            
-            # Make prediction
-            prediction = predictor.predict(request.caption, image)
-            
-            results.append(PredictionResponse(
-                engagement_score=prediction["engagement_score"],
-                confidence=prediction.get("confidence"),
-                feature_importance=prediction.get("feature_importance")
-            ))
-        except Exception as e:
-            # Skip failed predictions in batch mode
-            results.append(PredictionResponse(
-                engagement_score=0.0,
-                confidence=0.0,
-                feature_importance={"error": str(e)}
-            ))
-    
-    return results
-
-# Model info endpoint
-@app.get("/model_info")
-def model_info(predictor: ModelPredictor = Depends(get_predictor)):
-    return predictor.get_model_info()
-
-if __name__ == "__main__":
-    # Run the FastAPI app with uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True) 
+    return {"engagement_score": engagement_pred}

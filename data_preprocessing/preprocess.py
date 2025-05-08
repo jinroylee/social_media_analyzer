@@ -1,77 +1,70 @@
-"""
-Script to clean data and extract features from social media data.
-"""
+import os
+import math
+import re
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Tuple, Union
+import torch
+from transformers import pipeline, CLIPProcessor, CLIPModel, CLIPTokenizer
+from PIL import Image
+from tqdm import tqdm
 
-from utils.text_processing import clean_text, remove_emojis
+clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+sentiment_pipeline = pipeline("sentiment-analysis")
 
-def load_data(filepath: str) -> pd.DataFrame:
-    """
-    Load social media data from a CSV file.
-    
-    Args:
-        filepath: Path to the data file
-        
-    Returns:
-        DataFrame containing the loaded data
-    """
-    # Placeholder for data loading functionality
-    return pd.read_csv(filepath)
+EMOJI_PATTERN = re.compile("[\U00010000-\U0010FFFF]", flags=re.UNICODE)
+URL_PATTERN = re.compile(r"http\S+")
 
-def preprocess_text_data(df: pd.DataFrame, text_column: str) -> pd.DataFrame:
-    """
-    Clean and preprocess text data.
-    
-    Args:
-        df: DataFrame containing the text data
-        text_column: Name of the column containing text data
-        
-    Returns:
-        DataFrame with preprocessed text
-    """
-    # Placeholder for text preprocessing functionality
-    df['cleaned_text'] = df[text_column].apply(clean_text)
-    df['no_emoji'] = df[text_column].apply(remove_emojis)
-    return df
+def clean_text(text):
+    text = text.lower()
+    text = URL_PATTERN.sub("", text)
+    text = EMOJI_PATTERN.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-def extract_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Extract features from social media data.
-    
-    Args:
-        df: DataFrame containing the social media data
-        
-    Returns:
-        DataFrame with extracted features
-    """
-    # Placeholder for feature extraction functionality
-    return df
+def compute_sentiment(text):
+    result = sentiment_pipeline(text[:512])[0]
+    score = result['score'] if result['label'] == "POSITIVE" else -result['score']
+    return score
 
-def split_data(df: pd.DataFrame, test_size: float = 0.2, random_state: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Split data into training and testing sets.
-    
-    Args:
-        df: DataFrame containing the data
-        test_size: Proportion of data to use for testing
-        random_state: Random seed for reproducibility
-        
-    Returns:
-        Tuple of (train_df, test_df)
-    """
-    # Placeholder for data splitting functionality
-    return df.sample(frac=0.8, random_state=random_state), df.sample(frac=0.2, random_state=random_state)
+def compute_engagement(row):
+    views = max(row['view_count'], 1)
+    score = (
+        row['like_count'] +
+        row['comment_count'] +
+        row['share_count'] +
+        row['repost_count']
+    ) / views
+    return math.log(1 + score)
+
+def extract_features(df):
+    features = []
+    labels = []
+
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        description = clean_text(row['description'])
+        sentiment_score = compute_sentiment(description)
+
+        text_inputs = clip_tokenizer(description, truncation=True, max_length=77, return_tensors="pt")
+        text_embeds = clip_model.get_text_features(**text_inputs).squeeze().detach()
+
+        image_path = row['thumbnail_path']
+        image = Image.open(image_path).convert("RGB")
+        image_inputs = clip_processor(images=image, return_tensors="pt")
+        image_embeds = clip_model.get_image_features(**image_inputs).squeeze().detach()
+
+        feat = torch.cat([image_embeds, text_embeds, torch.tensor([sentiment_score])])
+        features.append(feat)
+
+        label = compute_engagement(row)
+        labels.append(label)
+
+    return torch.stack(features), torch.tensor(labels)
+
+def main():
+    df = pd.read_parquet("data/tiktok_data.parquet")
+    features, labels = extract_features(df)
+    torch.save((features, labels), "data/processed_data.pt")
 
 if __name__ == "__main__":
-    # Example usage
-    data_path = "../data/raw_social_media_data.csv"
-    df = load_data(data_path)
-    df = preprocess_text_data(df, "text")
-    df = extract_features(df)
-    train_df, test_df = split_data(df)
-    
-    # Save processed data
-    train_df.to_csv("../data/processed/train_data.csv", index=False)
-    test_df.to_csv("../data/processed/test_data.csv", index=False) 
+    main()
