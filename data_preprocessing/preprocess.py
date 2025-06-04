@@ -9,6 +9,7 @@ from tqdm import tqdm
 import pickle
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
 
 ###########################
 w_like = 1
@@ -66,14 +67,16 @@ def compute_sentiment(comments):
     return sentiment_class
 
 def compute_engagement(row):
+    followers = max(int(row['follower_count']), 1)
     views = max(int(row['view_count']), 1)
     like_rate = int(row['like_count']) / views
     comment_rate = int(row['comment_count']) / views
     share_rate = int(row['share_count']) / views
-    reach_boost = math.log(1 + views)
+    reach_boost = math.log(1 + views)/math.log(1 + followers)
 
     # print(like_rate, comment_rate, share_rate, reach_boost)
     score = (w_like*like_rate + w_comment*comment_rate + w_share*share_rate) * reach_boost
+    score = views/followers
     # print("score: ", score)
     return score
 
@@ -155,6 +158,48 @@ def prepare_data(df):
     
     return data
 
+def split_and_save_data(data, train_ratio=0.9, random_state=42):
+    """
+    Split data into training and testing sets and save them separately.
+    
+    Args:
+        data: List of processed data points
+        train_ratio: Ratio for training data (default 0.9 for 9:1 split)
+        random_state: Random seed for reproducibility
+    """
+    print(f"\nSplitting data into {train_ratio:.1%} training and {1-train_ratio:.1%} testing...")
+    
+    # Split the data randomly
+    train_data, test_data = train_test_split(
+        data, 
+        train_size=train_ratio, 
+        random_state=random_state,
+        shuffle=True
+    )
+    
+    print(f"Training samples: {len(train_data)}")
+    print(f"Testing samples: {len(test_data)}")
+    
+    # Create data directory if it doesn't exist
+    os.makedirs("data", exist_ok=True)
+    
+    # Save training data
+    with open("data/train_data.pkl", "wb") as f:
+        pickle.dump(train_data, f)
+    print("Training data saved to data/train_data.pkl")
+    
+    # Save testing data
+    with open("data/test_data.pkl", "wb") as f:
+        pickle.dump(test_data, f)
+    print("Testing data saved to data/test_data.pkl")
+    
+    # Also save the complete dataset for backward compatibility
+    with open("data/processed_data.pkl", "wb") as f:
+        pickle.dump(data, f)
+    print("Complete dataset saved to data/processed_data.pkl")
+    
+    return train_data, test_data
+
 def main():
     print("Starting data preprocessing...")
     df = pd.read_parquet("data/tiktok_data/tiktok_data.parquet")
@@ -162,23 +207,30 @@ def main():
     print("Data loaded successfully")
     data = prepare_data(df)
     
-    # Save processed data and scaler
-    with open("data/processed_data.pkl", "wb") as f:
-        pickle.dump(data, f)
+    # Split and save data
+    train_data, test_data = split_and_save_data(data, train_ratio=0.9, random_state=42)
     
-    print(f"Processed {len(data)} samples and saved to data/processed_data.pkl")
+    print(f"\nProcessed {len(data)} total samples")
     
-    # Print some statistics
-    sentiments = [d['sentiment'] for d in data]
-    labels = [d['label'] for d in data]
+    # Print some statistics for training data
+    train_sentiments = [d['sentiment'] for d in train_data]
+    train_labels = [d['label'] for d in train_data]
     
-    print(f"\nSentiment statistics:")
-    print(f"  Min: {min(sentiments):.3f}, Max: {max(sentiments):.3f}")
-    print(f"  Mean: {np.mean(sentiments):.3f}, Std: {np.std(sentiments):.3f}")
+    print(f"\nTraining data statistics:")
+    print(f"  Sentiment - Min: {min(train_sentiments):.3f}, Max: {max(train_sentiments):.3f}")
+    print(f"  Sentiment - Mean: {np.mean(train_sentiments):.3f}, Std: {np.std(train_sentiments):.3f}")
+    print(f"  Engagement - Min: {min(train_labels):.3f}, Max: {max(train_labels):.3f}")
+    print(f"  Engagement - Mean: {np.mean(train_labels):.3f}, Std: {np.std(train_labels):.3f}")
     
-    print(f"\nEngagement label statistics:")
-    print(f"  Min: {min(labels):.3f}, Max: {max(labels):.3f}")
-    print(f"  Mean: {np.mean(labels):.3f}, Std: {np.std(labels):.3f}")
+
+    with open("data/train_data.pkl", "wb") as f:
+        pickle.dump(train_data, f)
+        print("Training data saved to data/train_data.pkl")
+
+    # Save testing data
+    with open("data/test_data.pkl", "wb") as f:
+        pickle.dump(test_data, f)
+        print("Testing data saved to data/test_data.pkl")
 
 if __name__ == "__main__":
     main()

@@ -13,9 +13,6 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BATCH_SIZE = 16
-EPOCHS = 20
-LEARNING_RATE = 1e-4
-LORA_LEARNING_RATE = 1e-3  # Higher learning rate for LoRA parameters
 
 class EngagementDataset(Dataset):
     """Dataset class for engagement prediction with raw images and text."""
@@ -96,93 +93,41 @@ def main():
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
     tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
     
-    # Load training data (separate file)
-    with open("data/train_data.pkl", "rb") as f:
-        data = pickle.load(f)
+    # Load test data (separate file)
+    with open("data/test_data.pkl", "rb") as f:
+        test_data = pickle.load(f)
     
-    print(f"Loaded {len(data)} training samples")
+    print(f"Loaded {len(test_data)} test samples")
     
-    # Create dataset
-    dataset = EngagementDataset(data, processor, tokenizer)
+    # Create test dataset
+    test_dataset = EngagementDataset(test_data, processor, tokenizer)
     
-    # Split training data into train/validation (80%/20% of training data)
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
+    print(f"Test size: {len(test_dataset)}")
     
-    train_dataset, val_dataset = random_split(
-        dataset, [train_size, val_size]
-    )
-    
-    print(f"Train size: {train_size}, Validation size: {val_size}")
-    
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    # Create test dataloader
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
     # Initialize model with LoRA
     model = CLIPEngagementRegressor(use_lora=True, lora_rank=8).to(device)
     
-    # Setup optimizers with different learning rates for LoRA and non-LoRA parameters
-    lora_params = []
-    other_params = []
+    # Load trained model
+    model_path = 'models/best_model_lora.pth'
+    if not os.path.exists(model_path):
+        print(f"Error: Model file {model_path} not found!")
+        print("Please run training first to create the model.")
+        return
     
-    for name, param in model.named_parameters():
-        if 'lora_' in name:
-            lora_params.append(param)
-        else:
-            other_params.append(param)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    print(f"Loaded trained model from {model_path}")
     
-    optimizer = torch.optim.AdamW([
-        {'params': other_params, 'lr': LEARNING_RATE},
-        {'params': lora_params, 'lr': LORA_LEARNING_RATE}
-    ])
+    # Evaluate on test set
+    print("Evaluating on test set...")
+    test_mae, test_corr, test_loss = evaluate(model, test_loader, device)
     
-    criterion = nn.MSELoss()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
-    
-    best_val_mae = float('inf')
-    
-    print("Starting training with LoRA...")
-    
-    for epoch in range(EPOCHS):
-        # Training
-        model.train()
-        train_loss = 0
-        
-        for batch_idx, batch in enumerate(train_loader):
-            pixel_values = batch['pixel_values'].to(device)
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            sentiment = batch['sentiment'].to(device)
-            labels = batch['label'].to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(pixel_values, input_ids, attention_mask, sentiment)
-            loss = criterion(outputs.squeeze(), labels)
-            loss.backward()
-            optimizer.step()
-            
-            train_loss += loss.item()
-            
-            if batch_idx % 10 == 0:
-                print(f'Epoch {epoch+1}/{EPOCHS}, Batch {batch_idx}/{len(train_loader)}, Loss: {loss.item():.4f}')
-        
-        # Validation
-        val_mae, val_corr, val_loss = evaluate(model, val_loader, device)
-        scheduler.step(val_loss)
-        
-        print(f'Epoch {epoch+1}/{EPOCHS}:')
-        print(f'  Train Loss: {train_loss/len(train_loader):.4f}')
-        print(f'  Val Loss: {val_loss:.4f}, Val MAE: {val_mae:.4f}, Val Correlation: {val_corr:.4f}')
-        
-        # Save best model
-        if val_mae < best_val_mae:
-            best_val_mae = val_mae
-            torch.save(model.state_dict(), 'models/best_model_lora.pth')
-            print(f'  New best model saved! MAE: {val_mae:.4f}')
-    
-    print(f'\nTraining completed!')
-    print(f'Best validation MAE: {best_val_mae:.4f}')
+    print(f'\nFinal Test Results:')
+    print(f'Test MAE: {test_mae:.4f}')
+    print(f'Test Correlation: {test_corr:.4f}')
+    print(f'Test Loss: {test_loss:.4f}')
 
 if __name__ == "__main__":
-    main()
+    main() 
