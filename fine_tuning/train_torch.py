@@ -8,9 +8,6 @@ from scipy.stats import spearmanr
 import pickle
 import math
 from PIL import Image
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BATCH_SIZE = 16
 EPOCHS = 20
