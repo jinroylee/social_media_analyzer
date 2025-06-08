@@ -94,7 +94,7 @@ def main():
     tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
     
     # Load training data (separate file)
-    with open("data/train_data.pkl", "rb") as f:
+    with open("finetuning/data/train_data.pkl", "rb") as f:
         data = pickle.load(f)
     
     print(f"Loaded {len(data)} training samples")
@@ -175,7 +175,7 @@ def main():
         # Save best model
         if val_mae < best_val_mae:
             best_val_mae = val_mae
-            torch.save(model.state_dict(), 'models/best_model_lora.pth')
+            torch.save(model.state_dict(), 'finetuning/models/best_model_lora.pth')
             print(f'  New best model saved! MAE: {val_mae:.4f}')
     
     print(f'\nTraining completed!')

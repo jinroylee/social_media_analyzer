@@ -181,28 +181,28 @@ def split_and_save_data(data, train_ratio=0.9, random_state=42):
     print(f"Testing samples: {len(test_data)}")
     
     # Create data directory if it doesn't exist
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("finetuning/data", exist_ok=True)
     
     # Save training data
-    with open("data/train_data.pkl", "wb") as f:
+    with open("finetuning/data/train_data.pkl", "wb") as f:
         pickle.dump(train_data, f)
-    print("Training data saved to data/train_data.pkl")
+    print("Training data saved to finetuning/data/train_data.pkl")
     
     # Save testing data
-    with open("data/test_data.pkl", "wb") as f:
+    with open("finetuning/data/test_data.pkl", "wb") as f:
         pickle.dump(test_data, f)
-    print("Testing data saved to data/test_data.pkl")
+    print("Testing data saved to finetuning/data/test_data.pkl")
     
     # Also save the complete dataset for backward compatibility
-    with open("data/processed_data.pkl", "wb") as f:
+    with open("finetuning/data/processed_data.pkl", "wb") as f:
         pickle.dump(data, f)
-    print("Complete dataset saved to data/processed_data.pkl")
+    print("Complete dataset saved to finetuning/data/processed_data.pkl")
     
     return train_data, test_data
 
 def main():
     print("Starting data preprocessing...")
-    df = pd.read_parquet("finetuning/data/tiktok_data/tiktok_data.parquet")
+    df = pd.read_parquet("finetuning/data/tiktok_data/tiktok_data_cleaned.parquet")
 
     print("Data loaded successfully")
     data = prepare_data(df)
@@ -221,16 +221,6 @@ def main():
     print(f"  Sentiment - Mean: {np.mean(train_sentiments):.3f}, Std: {np.std(train_sentiments):.3f}")
     print(f"  Engagement - Min: {min(train_labels):.3f}, Max: {max(train_labels):.3f}")
     print(f"  Engagement - Mean: {np.mean(train_labels):.3f}, Std: {np.std(train_labels):.3f}")
-    
-
-    with open("finetuning/data/train_data.pkl", "wb") as f:
-        pickle.dump(train_data, f)
-        print("Training data saved to finetuning/data/train_data.pkl")
-
-    # Save testing data
-    with open("finetuning/data/test_data.pkl", "wb") as f:
-        pickle.dump(test_data, f)
-        print("Testing data saved to finetuning/data/test_data.pkl")
 
 if __name__ == "__main__":
     main()
