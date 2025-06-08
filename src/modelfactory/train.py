@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, random_split
 from transformers import CLIPProcessor, CLIPTokenizer
-from models.clip_regressor import CLIPEngagementRegressor
+from modelfactory.models.clip_regressor import CLIPEngagementRegressor
 from sklearn.metrics import mean_absolute_error
 from scipy.stats import spearmanr
 import pickle
