@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import CLIPProcessor, CLIPTokenizer
 from finetuning.models.clip_regressor import CLIPEngagementRegressor
-from finetuning.utils.engagementdataset import EngagementDataset
+from finetuning.utils.engagement_dataset import EngagementDataset
 from sklearn.metrics import mean_absolute_error
 from scipy.stats import spearmanr
 import pickle
@@ -19,7 +19,7 @@ def evaluate(model, dataloader, device):
     predictions = []
     targets = []
     total_loss = 0
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     
     with torch.no_grad():
         for batch in dataloader:

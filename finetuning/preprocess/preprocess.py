@@ -8,8 +8,9 @@ from PIL import Image
 from tqdm import tqdm
 import pickle
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from finetuning.utils.data_stat import visualize_distribution
 
 ###########################
 w_like = 1
@@ -32,7 +33,7 @@ EMOJI_PATTERN = re.compile("[\U00010000-\U0010FFFF]", flags=re.UNICODE)
 URL_PATTERN = re.compile(r"http\S+")
 
 sentiment_map = {"Very Negative":0, "Negative":1, "Neutral":2, "Positive":3, "Very Positive":4}
-
+    
 def clean_text(text):
     text = text.lower()
     text = URL_PATTERN.sub("", text)
@@ -76,18 +77,20 @@ def compute_engagement(row):
 
     # print(like_rate, comment_rate, share_rate, reach_boost)
     score = (w_like*like_rate + w_comment*comment_rate + w_share*share_rate) * reach_boost
-    score = views/followers
+    #score = views/followers
     # print("score: ", score)
-    return score
+    return np.log1p(score)
 
 def normalize_sentiment(sentiment_values):
     return np.array(sentiment_values) / 4.0
 
 def normalize_engagement_labels(engagement_scores):
-    scaler = MinMaxScaler()
-    print("engagement_scores: ", engagement_scores[:100])
+    scaler = StandardScaler()
+    print("engagement_scores: ", engagement_scores[:10])
+    engagement_scores = np.clip(engagement_scores, -5, 5)
+    visualize_distribution(engagement_scores, "Raw Engagement Scores Distribution")
     normalized_scores = scaler.fit_transform(np.array(engagement_scores).reshape(-1, 1))
-    print("normalized_scores: ", normalized_scores[:100])
+    print("normalized_scores: ", normalized_scores[:10])
     return normalized_scores.flatten()
 
 def prepare_data(df):

@@ -3,15 +3,15 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from transformers import CLIPProcessor, CLIPTokenizer
 from finetuning.models.clip_regressor import CLIPEngagementRegressor
-from finetuning.utils.engagementdataset import EngagementDataset
+from finetuning.utils.engagement_dataset import EngagementDataset
 from sklearn.metrics import mean_absolute_error
 from scipy.stats import spearmanr
 import pickle
 import math
 from PIL import Image
 
-BATCH_SIZE = 16
-EPOCHS = 20
+BATCH_SIZE = 32
+EPOCHS = 10
 LEARNING_RATE = 1e-4
 LORA_LEARNING_RATE = 1e-3  # Higher learning rate for LoRA parameters
 
@@ -20,7 +20,7 @@ def evaluate(model, dataloader, device):
     predictions = []
     targets = []
     total_loss = 0
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     
     with torch.no_grad():
         for batch in dataloader:
@@ -92,7 +92,7 @@ def main():
         {'params': lora_params, 'lr': LORA_LEARNING_RATE}
     ])
     
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
     
     best_val_mae = float('inf')

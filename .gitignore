@@ -1,2 +1,2 @@
 *.pkl
-*.pth
+__pycache__
