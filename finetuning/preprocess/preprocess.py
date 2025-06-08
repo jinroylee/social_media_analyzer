@@ -202,7 +202,7 @@ def split_and_save_data(data, train_ratio=0.9, random_state=42):
 
 def main():
     print("Starting data preprocessing...")
-    df = pd.read_parquet("data/tiktok_data/tiktok_data.parquet")
+    df = pd.read_parquet("finetuning/data/tiktok_data/tiktok_data.parquet")
 
     print("Data loaded successfully")
     data = prepare_data(df)
@@ -223,14 +223,14 @@ def main():
     print(f"  Engagement - Mean: {np.mean(train_labels):.3f}, Std: {np.std(train_labels):.3f}")
     
 
-    with open("data/train_data.pkl", "wb") as f:
+    with open("finetuning/data/train_data.pkl", "wb") as f:
         pickle.dump(train_data, f)
-        print("Training data saved to data/train_data.pkl")
+        print("Training data saved to finetuning/data/train_data.pkl")
 
     # Save testing data
-    with open("data/test_data.pkl", "wb") as f:
+    with open("finetuning/data/test_data.pkl", "wb") as f:
         pickle.dump(test_data, f)
-        print("Testing data saved to data/test_data.pkl")
+        print("Testing data saved to finetuning/data/test_data.pkl")
 
 if __name__ == "__main__":
     main()
