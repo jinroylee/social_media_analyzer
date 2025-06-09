@@ -2,7 +2,7 @@ import pickle
 
 if __name__ == "__main__":
     # Load data from pkl file
-    with open("finetuning/data/test_data.pkl", "rb") as f:
+    with open("modelfactory/data/test_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     # Explore the data

@@ -64,7 +64,7 @@ def visualize_distribution(scores, title="Engagement Scores Distribution"):
     print(f"  Kurtosis: {stats.kurtosis(scores):.4f}")
     
     # Save the plot
-    plt.savefig('finetuning/data/engagement_distribution.png', dpi=300, bbox_inches='tight')
-    print(f"  Plot saved to: finetuning/data/engagement_distribution.png")
+    plt.savefig('modelfactory/data/engagement_distribution.png', dpi=300, bbox_inches='tight')
+    print(f"  Plot saved to: modelfactory/data/engagement_distribution.png")
     
     plt.show()

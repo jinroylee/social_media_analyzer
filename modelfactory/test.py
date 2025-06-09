@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import CLIPProcessor, CLIPTokenizer
-from finetuning.models.clip_regressor import CLIPEngagementRegressor
-from finetuning.utils.engagement_dataset import EngagementDataset
+from modelfactory.models.clip_regressor import CLIPEngagementRegressor
+from modelfactory.utils.engagement_dataset import EngagementDataset
 from sklearn.metrics import mean_absolute_error
 from scipy.stats import spearmanr
 import pickle
@@ -51,7 +51,7 @@ def main():
     tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
     
     # Load test data (separate file)
-    with open("finetuning/data/test_data.pkl", "rb") as f:
+    with open("modelfactory/data/test_data.pkl", "rb") as f:
         test_data = pickle.load(f)
     
     print(f"Loaded {len(test_data)} test samples")
@@ -68,7 +68,7 @@ def main():
     model = CLIPEngagementRegressor(use_lora=True, lora_rank=8).to(device)
     
     # Load trained model
-    model_path = 'finetuning/models/best_model_lora.pth'
+    model_path = 'modelfactory/models/best_model_lora.pth'
     if not os.path.exists(model_path):
         print(f"Error: Model file {model_path} not found!")
         print("Please run training first to create the model.")

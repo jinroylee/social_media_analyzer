@@ -10,7 +10,7 @@ import pickle
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from finetuning.utils.data_stat import visualize_distribution
+from modelfactory.utils.data_stat import visualize_distribution
 
 ###########################
 w_like = 1
@@ -184,28 +184,28 @@ def split_and_save_data(data, train_ratio=0.9, random_state=42):
     print(f"Testing samples: {len(test_data)}")
     
     # Create data directory if it doesn't exist
-    os.makedirs("finetuning/data", exist_ok=True)
+    os.makedirs("modelfactory/data", exist_ok=True)
     
     # Save training data
-    with open("finetuning/data/train_data.pkl", "wb") as f:
+    with open("modelfactory/data/train_data.pkl", "wb") as f:
         pickle.dump(train_data, f)
-    print("Training data saved to finetuning/data/train_data.pkl")
+    print("Training data saved to modelfactory/data/train_data.pkl")
     
     # Save testing data
-    with open("finetuning/data/test_data.pkl", "wb") as f:
+    with open("modelfactory/data/test_data.pkl", "wb") as f:
         pickle.dump(test_data, f)
-    print("Testing data saved to finetuning/data/test_data.pkl")
+    print("Testing data saved to modelfactory/data/test_data.pkl")
     
     # Also save the complete dataset for backward compatibility
-    with open("finetuning/data/processed_data.pkl", "wb") as f:
+    with open("modelfactory/data/processed_data.pkl", "wb") as f:
         pickle.dump(data, f)
-    print("Complete dataset saved to finetuning/data/processed_data.pkl")
+    print("Complete dataset saved to modelfactory/data/processed_data.pkl")
     
     return train_data, test_data
 
 def main():
     print("Starting data preprocessing...")
-    df = pd.read_parquet("finetuning/data/tiktok_data/tiktok_data_cleaned.parquet")
+    df = pd.read_parquet("modelfactory/data/tiktok_data/tiktok_data_cleaned.parquet")
 
     print("Data loaded successfully")
     data = prepare_data(df)
