@@ -1,0 +1,223 @@
+# MLflow Experiment Configurations
+# This file defines different experiment setups for social media engagement prediction
+
+experiments:
+  # Baseline CLIP + LoRA experiment
+  baseline_lora:
+    experiment_name: "social_media_engagement_prediction"
+    run_name_prefix: "baseline_lora"
+    description: "Baseline CLIP model with LoRA fine-tuning"
+    
+    model:
+      use_lora: true
+      lora_rank: 8
+      lora_alpha: 16
+      lora_dropout: 0.1
+      base_model: "openai/clip-vit-large-patch14"
+    
+    training:
+      batch_size: 32
+      epochs: 10
+      learning_rate: 1e-4
+      lora_learning_rate: 1e-3
+      optimizer: "AdamW"
+      loss_function: "HuberLoss"
+      scheduler: "ReduceLROnPlateau"
+      scheduler_params:
+        patience: 3
+        factor: 0.5
+    
+    data:
+      train_split: 0.8
+      val_split: 0.2
+      max_text_length: 77
+      image_size: 224
+    
+    tags:
+      model_type: "CLIP_LoRA"
+      experiment_type: "baseline"
+      framework: "pytorch"
+
+  # High rank LoRA experiment
+  high_rank_lora:
+    experiment_name: "social_media_engagement_prediction"
+    run_name_prefix: "high_rank_lora"
+    description: "CLIP model with higher rank LoRA for more parameters"
+    
+    model:
+      use_lora: true
+      lora_rank: 16
+      lora_alpha: 32
+      lora_dropout: 0.1
+      base_model: "openai/clip-vit-large-patch14"
+    
+    training:
+      batch_size: 32
+      epochs: 15
+      learning_rate: 1e-4
+      lora_learning_rate: 5e-4
+      optimizer: "AdamW"
+      loss_function: "HuberLoss"
+      scheduler: "ReduceLROnPlateau"
+      scheduler_params:
+        patience: 3
+        factor: 0.5
+    
+    data:
+      train_split: 0.8
+      val_split: 0.2
+      max_text_length: 77
+      image_size: 224
+    
+    tags:
+      model_type: "CLIP_LoRA"
+      experiment_type: "high_rank"
+      framework: "pytorch"
+
+  # Full fine-tuning experiment
+  full_finetuning:
+    experiment_name: "social_media_engagement_prediction"
+    run_name_prefix: "full_finetune"
+    description: "Full fine-tuning of CLIP model without LoRA"
+    
+    model:
+      use_lora: false
+      base_model: "openai/clip-vit-large-patch14"
+    
+    training:
+      batch_size: 16  # Smaller batch size for full fine-tuning
+      epochs: 8
+      learning_rate: 5e-5  # Lower learning rate for full fine-tuning
+      optimizer: "AdamW"
+      loss_function: "HuberLoss"
+      scheduler: "ReduceLROnPlateau"
+      scheduler_params:
+        patience: 2
+        factor: 0.7
+    
+    data:
+      train_split: 0.8
+      val_split: 0.2
+      max_text_length: 77
+      image_size: 224
+    
+    tags:
+      model_type: "CLIP_Full"
+      experiment_type: "full_finetuning"
+      framework: "pytorch"
+
+  # Ablation study: Different LoRA configurations
+  lora_ablation_rank4:
+    experiment_name: "social_media_engagement_prediction"
+    run_name_prefix: "lora_rank4"
+    description: "LoRA ablation study with rank 4"
+    
+    model:
+      use_lora: true
+      lora_rank: 4
+      lora_alpha: 8
+      lora_dropout: 0.1
+      base_model: "openai/clip-vit-large-patch14"
+    
+    training:
+      batch_size: 32
+      epochs: 12
+      learning_rate: 1e-4
+      lora_learning_rate: 1e-3
+      optimizer: "AdamW"
+      loss_function: "HuberLoss"
+      scheduler: "ReduceLROnPlateau"
+      scheduler_params:
+        patience: 3
+        factor: 0.5
+    
+    data:
+      train_split: 0.8
+      val_split: 0.2
+      max_text_length: 77
+      image_size: 224
+    
+    tags:
+      model_type: "CLIP_LoRA"
+      experiment_type: "ablation_rank4"
+      framework: "pytorch"
+
+  # Learning rate experiment
+  lr_experiment:
+    experiment_name: "social_media_engagement_prediction"
+    run_name_prefix: "lr_experiment"
+    description: "Learning rate sensitivity experiment"
+    
+    model:
+      use_lora: true
+      lora_rank: 8
+      lora_alpha: 16
+      lora_dropout: 0.1
+      base_model: "openai/clip-vit-large-patch14"
+    
+    training:
+      batch_size: 32
+      epochs: 10
+      learning_rate: 5e-5  # Different base learning rate
+      lora_learning_rate: 5e-4  # Different LoRA learning rate
+      optimizer: "AdamW"
+      loss_function: "HuberLoss"
+      scheduler: "ReduceLROnPlateau"
+      scheduler_params:
+        patience: 3
+        factor: 0.5
+    
+    data:
+      train_split: 0.8
+      val_split: 0.2
+      max_text_length: 77
+      image_size: 224
+    
+    tags:
+      model_type: "CLIP_LoRA"
+      experiment_type: "lr_sensitivity"
+      framework: "pytorch"
+
+# Experiment groups for batch execution
+experiment_groups:
+  baseline_comparison:
+    - baseline_lora
+    - full_finetuning
+  
+  lora_ablation:
+    - lora_ablation_rank4
+    - baseline_lora
+    - high_rank_lora
+  
+  hyperparameter_tuning:
+    - baseline_lora
+    - lr_experiment
+    - high_rank_lora
+
+# Default MLflow settings
+mlflow_settings:
+  tracking_uri: null  # Uses local file store
+  artifact_location: null
+  experiment_name: "social_media_engagement_prediction"
+  
+  # Metrics to track
+  metrics:
+    - train_loss
+    - train_mae
+    - train_correlation
+    - train_r2
+    - val_loss
+    - val_mae
+    - val_correlation
+    - val_r2
+    - best_val_mae
+    - best_val_r2
+    - learning_rate
+    - lora_learning_rate
+  
+  # Artifacts to save
+  artifacts:
+    - model_checkpoints
+    - training_summary
+    - model_architecture
+    - final_model 

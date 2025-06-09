@@ -4,16 +4,22 @@ from torch.utils.data import DataLoader, random_split
 from transformers import CLIPProcessor, CLIPTokenizer
 from modelfactory.models.clip_regressor import CLIPEngagementRegressor
 from modelfactory.utils.engagement_dataset import EngagementDataset
-from sklearn.metrics import mean_absolute_error
+from modelfactory.utils.mlflow_utils import MLflowTracker, create_experiment_config
+from sklearn.metrics import mean_absolute_error, r2_score
 from scipy.stats import spearmanr
 import pickle
 import math
 from PIL import Image
+import os
+from datetime import datetime
 
+# Training configuration
 BATCH_SIZE = 32
 EPOCHS = 10
 LEARNING_RATE = 1e-4
 LORA_LEARNING_RATE = 1e-3  # Higher learning rate for LoRA parameters
+LORA_RANK = 8
+USE_LORA = True
 
 def evaluate(model, dataloader, device):
     model.eval()
@@ -39,105 +45,231 @@ def evaluate(model, dataloader, device):
     
     mae = mean_absolute_error(targets, predictions)
     correlation, _ = spearmanr(targets, predictions)
+    r2 = r2_score(targets, predictions)
     avg_loss = total_loss / len(dataloader)
     
-    return mae, correlation, avg_loss
+    return mae, correlation, r2, avg_loss
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Load processors
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
-    tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-    
-    # Load training data (separate file)
-    with open("modelfactory/data/train_data.pkl", "rb") as f:
-        data = pickle.load(f)
-    
-    print(f"Loaded {len(data)} training samples")
-    
-    # Create dataset
-    dataset = EngagementDataset(data, processor, tokenizer)
-    
-    # Split training data into train/validation (80%/20% of training data)
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    
-    train_dataset, val_dataset = random_split(
-        dataset, [train_size, val_size]
+    # Initialize MLflow tracker
+    mlflow_tracker = MLflowTracker(
+        experiment_name="social_media_engagement_prediction",
+        tracking_uri=None,  # Uses local file store
+        artifact_location=None
     )
     
-    print(f"Train size: {train_size}, Validation size: {val_size}")
+    # Create run name with timestamp
+    run_name = f"CLIP_LoRA_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    
-    # Initialize model with LoRA
-    model = CLIPEngagementRegressor(use_lora=True, lora_rank=8).to(device)
-    
-    # Setup optimizers with different learning rates for LoRA and non-LoRA parameters
-    lora_params = []
-    other_params = []
-    
-    for name, param in model.named_parameters():
-        if 'lora_' in name:
-            lora_params.append(param)
-        else:
-            other_params.append(param)
-    
-    optimizer = torch.optim.AdamW([
-        {'params': other_params, 'lr': LEARNING_RATE},
-        {'params': lora_params, 'lr': LORA_LEARNING_RATE}
-    ])
-    
-    criterion = nn.HuberLoss()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
-    
-    best_val_mae = float('inf')
-    
-    print("Starting training with LoRA...")
-    
-    for epoch in range(EPOCHS):
-        # Training
-        model.train()
-        train_loss = 0
+    # Start MLflow run
+    with mlflow_tracker.start_run(run_name=run_name) as run:
+        # Set tags for the run
+        mlflow_tracker.set_tags({
+            "model_type": "CLIP_LoRA",
+            "task": "engagement_prediction",
+            "framework": "pytorch",
+            "device": str(device)
+        })
         
-        for batch_idx, batch in enumerate(train_loader):
-            pixel_values = batch['pixel_values'].to(device)
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            sentiment = batch['sentiment'].to(device)
-            labels = batch['label'].to(device)
+        # Create experiment configuration
+        config = create_experiment_config(
+            batch_size=BATCH_SIZE,
+            epochs=EPOCHS,
+            learning_rate=LEARNING_RATE,
+            lora_learning_rate=LORA_LEARNING_RATE,
+            lora_rank=LORA_RANK,
+            use_lora=USE_LORA
+        )
+        
+        # Log hyperparameters
+        mlflow_tracker.log_hyperparameters(config)
+        
+        # Load processors
+        processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+        
+        # Load training data (separate file)
+        with open("modelfactory/data/train_data.pkl", "rb") as f:
+            data = pickle.load(f)
+        
+        print(f"Loaded {len(data)} training samples")
+        
+        # Create dataset
+        dataset = EngagementDataset(data, processor, tokenizer)
+        
+        # Split training data into train/validation (80%/20% of training data)
+        train_size = int(0.8 * len(dataset))
+        val_size = len(dataset) - train_size
+        
+        train_dataset, val_dataset = random_split(
+            dataset, [train_size, val_size]
+        )
+        
+        print(f"Train size: {train_size}, Validation size: {val_size}")
+        
+        # Log dataset information
+        mlflow_tracker.log_dataset_info(train_size, val_size)
+        
+        # Create dataloaders
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+        
+        # Initialize model with LoRA
+        model = CLIPEngagementRegressor(use_lora=USE_LORA, lora_rank=LORA_RANK).to(device)
+        
+        # Log model architecture
+        mlflow_tracker.log_model_architecture(model)
+        
+        # Setup optimizers with different learning rates for LoRA and non-LoRA parameters
+        lora_params = []
+        other_params = []
+        
+        for name, param in model.named_parameters():
+            if 'lora_' in name:
+                lora_params.append(param)
+            else:
+                other_params.append(param)
+        
+        optimizer = torch.optim.AdamW([
+            {'params': other_params, 'lr': LEARNING_RATE},
+            {'params': lora_params, 'lr': LORA_LEARNING_RATE}
+        ])
+        
+        criterion = nn.HuberLoss()
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+        
+        best_val_mae = float('inf')
+        best_val_r2 = -float('inf')
+        
+        print("Starting training with LoRA...")
+        
+        for epoch in range(EPOCHS):
+            # Training
+            model.train()
+            train_loss = 0
+            train_predictions = []
+            train_targets = []
             
-            optimizer.zero_grad()
-            outputs = model(pixel_values, input_ids, attention_mask, sentiment)
-            loss = criterion(outputs.squeeze(), labels)
-            loss.backward()
-            optimizer.step()
+            for batch_idx, batch in enumerate(train_loader):
+                pixel_values = batch['pixel_values'].to(device)
+                input_ids = batch['input_ids'].to(device)
+                attention_mask = batch['attention_mask'].to(device)
+                sentiment = batch['sentiment'].to(device)
+                labels = batch['label'].to(device)
+                
+                optimizer.zero_grad()
+                outputs = model(pixel_values, input_ids, attention_mask, sentiment)
+                loss = criterion(outputs.squeeze(), labels)
+                loss.backward()
+                optimizer.step()
+                
+                train_loss += loss.item()
+                train_predictions.extend(outputs.squeeze().detach().cpu().numpy())
+                train_targets.extend(labels.cpu().numpy())
+                
+                if batch_idx % 10 == 0:
+                    print(f'Epoch {epoch+1}/{EPOCHS}, Batch {batch_idx}/{len(train_loader)}, Loss: {loss.item():.4f}')
             
-            train_loss += loss.item()
+            # Calculate training metrics
+            train_mae = mean_absolute_error(train_targets, train_predictions)
+            train_corr, _ = spearmanr(train_targets, train_predictions)
+            train_r2 = r2_score(train_targets, train_predictions)
+            avg_train_loss = train_loss / len(train_loader)
             
-            if batch_idx % 10 == 0:
-                print(f'Epoch {epoch+1}/{EPOCHS}, Batch {batch_idx}/{len(train_loader)}, Loss: {loss.item():.4f}')
+            # Validation
+            val_mae, val_corr, val_r2, val_loss = evaluate(model, val_loader, device)
+            scheduler.step(val_loss)
+            
+            # Log metrics to MLflow
+            epoch_metrics = {
+                'train_loss': avg_train_loss,
+                'train_mae': train_mae,
+                'train_correlation': train_corr,
+                'train_r2': train_r2,
+                'val_loss': val_loss,
+                'val_mae': val_mae,
+                'val_correlation': val_corr,
+                'val_r2': val_r2,
+                'learning_rate': optimizer.param_groups[0]['lr'],
+                'lora_learning_rate': optimizer.param_groups[1]['lr'] if len(optimizer.param_groups) > 1 else None
+            }
+            
+            mlflow_tracker.log_metrics(epoch_metrics, step=epoch)
+            
+            print(f'Epoch {epoch+1}/{EPOCHS}:')
+            print(f'  Train - Loss: {avg_train_loss:.4f}, MAE: {train_mae:.4f}, Corr: {train_corr:.4f}, R²: {train_r2:.4f}')
+            print(f'  Val - Loss: {val_loss:.4f}, MAE: {val_mae:.4f}, Corr: {val_corr:.4f}, R²: {val_r2:.4f}')
+            
+            # Save best model based on validation MAE
+            if val_mae < best_val_mae:
+                best_val_mae = val_mae
+                best_val_r2 = val_r2
+                
+                # Save model checkpoint locally
+                os.makedirs('modelfactory/models', exist_ok=True)
+                model_path = 'modelfactory/models/best_model_lora.pth'
+                torch.save(model.state_dict(), model_path)
+                
+                # Log checkpoint to MLflow
+                mlflow_tracker.log_model_checkpoint(model, f"best_model_epoch_{epoch+1}.pth")
+                
+                print(f'  New best model saved! MAE: {val_mae:.4f}, R²: {val_r2:.4f}')
+                
+                # Log best metrics
+                mlflow_tracker.log_metrics({
+                    'best_val_mae': best_val_mae,
+                    'best_val_r2': best_val_r2,
+                    'best_epoch': epoch + 1
+                })
         
-        # Validation
-        val_mae, val_corr, val_loss = evaluate(model, val_loader, device)
-        scheduler.step(val_loss)
+        # Log final model to MLflow
+        print("Logging final model to MLflow...")
         
-        print(f'Epoch {epoch+1}/{EPOCHS}:')
-        print(f'  Train Loss: {train_loss/len(train_loader):.4f}')
-        print(f'  Val Loss: {val_loss:.4f}, Val MAE: {val_mae:.4f}, Val Correlation: {val_corr:.4f}')
+        # Create an example input for model signature
+        sample_batch = next(iter(val_loader))
+        example_input = {
+            'pixel_values': sample_batch['pixel_values'][:1].to(device),
+            'input_ids': sample_batch['input_ids'][:1].to(device),
+            'attention_mask': sample_batch['attention_mask'][:1].to(device),
+            'sentiment': sample_batch['sentiment'][:1].to(device)
+        }
         
-        # Save best model
-        if val_mae < best_val_mae:
-            best_val_mae = val_mae
-            torch.save(model.state_dict(), 'modelfactory/models/best_model_lora.pth')
-            print(f'  New best model saved! MAE: {val_mae:.4f}')
-    
-    print(f'\nTraining completed!')
-    print(f'Best validation MAE: {best_val_mae:.4f}')
+        # Log the final trained model
+        mlflow_tracker.log_pytorch_model(
+            model=model,
+            input_example=example_input,
+            model_path="final_model"
+        )
+        
+        # Log the best model file as artifact
+        if os.path.exists('modelfactory/models/best_model_lora.pth'):
+            mlflow_tracker.log_artifact_from_file(
+                'modelfactory/models/best_model_lora.pth',
+                'model_checkpoints'
+            )
+        
+        # Log training summary
+        summary_text = f"""
+        Training Summary:
+        ================
+        Best Validation MAE: {best_val_mae:.4f}
+        Best Validation R²: {best_val_r2:.4f}
+        Total Epochs: {EPOCHS}
+        Training Samples: {train_size}
+        Validation Samples: {val_size}
+        Device: {device}
+        Model: CLIP + LoRA (rank={LORA_RANK})
+        """
+        
+        mlflow_tracker.log_text_artifact(summary_text, "training_summary.txt")
+        
+        print(f'\nTraining completed!')
+        print(f'Best validation MAE: {best_val_mae:.4f}')
+        print(f'Best validation R²: {best_val_r2:.4f}')
+        print(f'MLflow run ID: {run.info.run_id}')
 
 if __name__ == "__main__":
     main()
