@@ -205,7 +205,7 @@ def split_and_save_data(data, train_ratio=0.9, random_state=42):
 
 def main():
     print("Starting data preprocessing...")
-    df = pd.read_parquet("modelfactory/data/tiktok_data/tiktok_data_cleaned.parquet")
+    df = pd.read_parquet("modelfactory/data/tiktok_data/tiktok_data.parquet")
 
     print("Data loaded successfully")
     data = prepare_data(df)
