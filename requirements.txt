@@ -47,3 +47,8 @@ pyarrow==20.0.0
 # Additional dependencies for sentiment analysis
 tabularisai-multilingual-sentiment-analysis
 
+# New dependencies
+boto3>=1.26.0
+tqdm>=4.64.0
+pathlib2>=2.3.7
+
