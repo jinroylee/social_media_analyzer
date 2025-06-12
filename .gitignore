@@ -1,3 +1,63 @@
 *.pkl
 __pycache__
 *.pth
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.test
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Uploads and temporary files
+uploads/
+temp/
+tmp/
+
+# Model files and data
+*.model
+*.bin
+models/
+data/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Jupyter Notebook
+.ipynb_checkpoints

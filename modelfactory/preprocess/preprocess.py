@@ -11,6 +11,13 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from modelfactory.utils.data_stat import visualize_distribution
+import boto3
+from dotenv import load_dotenv
+from botocore.exceptions import ClientError
+from io import BytesIO
+
+# Load environment variables
+load_dotenv()
 
 ###########################
 w_like = 1
@@ -18,8 +25,16 @@ w_comment = 10
 w_share = 100
 ###########################
 
+# S3 Configuration
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_REGION = os.getenv('AWS_REGION')
+
+# Initialize S3 client
+s3_client = boto3.client('s3', region_name=AWS_REGION)
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+
 # Only load sentiment pipeline for preprocessing
 sentiment_pipeline = pipeline(
     "text-classification", 
@@ -33,6 +48,28 @@ EMOJI_PATTERN = re.compile("[\U00010000-\U0010FFFF]", flags=re.UNICODE)
 URL_PATTERN = re.compile(r"http\S+")
 
 sentiment_map = {"Very Negative":0, "Negative":1, "Neutral":2, "Positive":3, "Very Positive":4}
+    
+def load_parquet_from_s3(bucket_name, key):
+    """Load parquet file from S3"""
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+        return pd.read_parquet(BytesIO(response['Body'].read()))
+    except ClientError as e:
+        print(f"Error loading parquet from S3: {e}")
+        raise
+
+def load_image_from_s3(bucket_name, key):
+    """Load image from S3"""
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+        image_data = BytesIO(response['Body'].read())
+        return Image.open(image_data).convert("RGB")
+    except ClientError as e:
+        print(f"Error loading image from S3 {key}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error opening image {key}: {e}")
+        return None
     
 def clean_text(text):
     text = text.lower()
@@ -104,11 +141,15 @@ def prepare_data(df):
     skipped_count = 0
     
     for _, row in tqdm(df.iterrows(), total=len(df)):
-        # Check if image file exists
-        image_path = row['thumbnail_path']
-        if not os.path.exists(image_path):
+        # Extract thumbnail filename from path and construct S3 key
+        thumbnail_filename = os.path.basename(row['thumbnail_path'])
+        s3_key = f"raw/thumbnails/{thumbnail_filename}"
+        
+        # Load image from S3
+        image = load_image_from_s3(S3_BUCKET_NAME, s3_key)
+        if image is None:
             skipped_count += 1
-            continue  # Skip this row if image doesn't exist
+            continue  # Skip this row if image doesn't exist or can't be loaded
         
         # Clean text
         description = clean_text(row['description'])
@@ -117,14 +158,6 @@ def prepare_data(df):
         sentiment_score = compute_sentiment(row['top_comments'])
         sentiment_scores.append(sentiment_score)
         
-        # Load image
-        try:
-            image = Image.open(image_path).convert("RGB")
-        except Exception as e:
-            print(f"Error loading image {image_path}: {e}")
-            skipped_count += 1
-            continue  # Skip this row if image can't be loaded
-        
         # Compute engagement label
         engagement_score = compute_engagement(row)
         engagement_scores.append(engagement_score)
@@ -132,7 +165,7 @@ def prepare_data(df):
         # Store raw data for training (will normalize after collecting all scores)
         data_point = {
             'video_id': row['video_id'],
-            'thumbnail_path': row['thumbnail_path'],
+            'thumbnail_path': s3_key,  # Store S3 key instead of local path
             'raw_text': row['description'],
             'top_comments': row['top_comments'],
             'view_count': row['view_count'],
@@ -163,7 +196,7 @@ def prepare_data(df):
 
 def split_and_save_data(data, train_ratio=0.9, random_state=42):
     """
-    Split data into training and testing sets and save them separately.
+    Split data into training and testing sets and save them to S3.
     
     Args:
         data: List of processed data points
@@ -183,31 +216,57 @@ def split_and_save_data(data, train_ratio=0.9, random_state=42):
     print(f"Training samples: {len(train_data)}")
     print(f"Testing samples: {len(test_data)}")
     
-    # Create data directory if it doesn't exist
-    os.makedirs("modelfactory/data", exist_ok=True)
+    # Save training data to S3
+    train_key = "processed/train.pkl"
+    if save_pkl_to_s3(train_data, S3_BUCKET_NAME, train_key):
+        print(f"Training data saved to s3://{S3_BUCKET_NAME}/{train_key}")
+    else:
+        print("Failed to save training data to S3")
     
-    # Save training data
-    with open("modelfactory/data/train_data.pkl", "wb") as f:
-        pickle.dump(train_data, f)
-    print("Training data saved to modelfactory/data/train_data.pkl")
-    
-    # Save testing data
-    with open("modelfactory/data/test_data.pkl", "wb") as f:
-        pickle.dump(test_data, f)
-    print("Testing data saved to modelfactory/data/test_data.pkl")
+    # Save testing data to S3
+    test_key = "processed/test.pkl"
+    if save_pkl_to_s3(test_data, S3_BUCKET_NAME, test_key):
+        print(f"Testing data saved to s3://{S3_BUCKET_NAME}/{test_key}")
+    else:
+        print("Failed to save testing data to S3")
     
     # Also save the complete dataset for backward compatibility
-    with open("modelfactory/data/processed_data.pkl", "wb") as f:
-        pickle.dump(data, f)
-    print("Complete dataset saved to modelfactory/data/processed_data.pkl")
+    complete_key = "processed/complete_data.pkl"
+    if save_pkl_to_s3(data, S3_BUCKET_NAME, complete_key):
+        print(f"Complete dataset saved to s3://{S3_BUCKET_NAME}/{complete_key}")
+    else:
+        print("Failed to save complete dataset to S3")
     
     return train_data, test_data
 
+def save_pkl_to_s3(data, bucket_name, key):
+    """Save pickle data to S3"""
+    try:
+        # Serialize data to bytes
+        pkl_buffer = BytesIO()
+        pickle.dump(data, pkl_buffer)
+        pkl_buffer.seek(0)
+        
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=pkl_buffer.getvalue()
+        )
+        print(f"Successfully saved {key} to S3")
+        return True
+    except Exception as e:
+        print(f"Error saving {key} to S3: {e}")
+        return False
+
 def main():
     print("Starting data preprocessing...")
-    df = pd.read_parquet("modelfactory/data/tiktok_data/tiktok_data.parquet")
+    print(f"Loading data from S3 bucket: {S3_BUCKET_NAME}")
+    
+    # Load parquet data from S3
+    df = load_parquet_from_s3(S3_BUCKET_NAME, "raw/data/tiktok_data.parquet")
 
-    print("Data loaded successfully")
+    print("Data loaded successfully from S3")
     data = prepare_data(df)
     
     # Split and save data

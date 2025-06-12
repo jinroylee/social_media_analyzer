@@ -13,8 +13,47 @@ from PIL import Image
 import sys
 import os
 from datetime import datetime
+import boto3
+from dotenv import load_dotenv
+from botocore.exceptions import ClientError
+from io import BytesIO
+
+# Load environment variables
+load_dotenv()
+
+# S3 Configuration
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_REGION = os.getenv('AWS_REGION')
+
+# Initialize S3 client
+s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 BATCH_SIZE = 16
+
+def load_pkl_from_s3(bucket_name, key):
+    """Load pickle data from S3"""
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+        pkl_data = pickle.loads(response['Body'].read())
+        return pkl_data
+    except ClientError as e:
+        print(f"Error loading pickle from S3 {key}: {e}")
+        raise
+
+def load_model_from_s3(bucket_name, key, device):
+    """Load PyTorch model state dict from S3"""
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+        model_data = BytesIO(response['Body'].read())
+        state_dict = torch.load(model_data, map_location=device)
+        print(f"Successfully loaded model from s3://{bucket_name}/{key}")
+        return state_dict
+    except ClientError as e:
+        print(f"Error loading model from S3 {key}: {e}")
+        raise
+    except Exception as e:
+        print(f"Error loading model {key}: {e}")
+        raise
 
 def evaluate(model, dataloader, device):
     model.eval()
@@ -48,6 +87,7 @@ def evaluate(model, dataloader, device):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Loading data from S3 bucket: {S3_BUCKET_NAME}")
     
     # Initialize MLflow tracker
     mlflow_tracker = MLflowTracker(
@@ -74,11 +114,10 @@ def main():
         processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
         
-        # Load test data (separate file)
-        with open("modelfactory/data/test_data.pkl", "rb") as f:
-            test_data = pickle.load(f)
+        # Load test data from S3
+        test_data = load_pkl_from_s3(S3_BUCKET_NAME, "processed/test.pkl")
         
-        print(f"Loaded {len(test_data)} test samples")
+        print(f"Loaded {len(test_data)} test samples from S3")
         
         # Log test dataset size
         mlflow_tracker.log_hyperparameters({
@@ -97,19 +136,21 @@ def main():
         # Initialize model with LoRA
         model = CLIPEngagementRegressor(use_lora=True, lora_rank=8).to(device)
         
-        # Load trained model
-        model_path = 'modelfactory/models/best_model_lora.pth'
-        if not os.path.exists(model_path):
-            print(f"Error: Model file {model_path} not found!")
-            print("Please run training first to create the model.")
+        # Load trained model from S3
+        model_key = "models/best_model_lora.pth"
+        try:
+            state_dict = load_model_from_s3(S3_BUCKET_NAME, model_key, device)
+            model.load_state_dict(state_dict)
+            print(f"Loaded trained model from S3: s3://{S3_BUCKET_NAME}/{model_key}")
+        except Exception as e:
+            print(f"Error: Could not load model from S3!")
+            print(f"Please ensure the model exists at s3://{S3_BUCKET_NAME}/{model_key}")
+            print(f"Run training first to create the model.")
             return
-        
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"Loaded trained model from {model_path}")
         
         # Log model info
         mlflow_tracker.log_hyperparameters({
-            "model_path": model_path,
+            "model_path": f"s3://{S3_BUCKET_NAME}/{model_key}",
             "model_class": model.__class__.__name__,
             "total_parameters": sum(p.numel() for p in model.parameters()),
             "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -149,7 +190,7 @@ def main():
         - Test Loss (Huber): {test_loss:.4f}
         
         Device: {device}
-        Model Path: {model_path}
+        Model Path: s3://{S3_BUCKET_NAME}/{model_key}
         Evaluation Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """
         

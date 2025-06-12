@@ -12,6 +12,20 @@ import math
 from PIL import Image
 import os
 from datetime import datetime
+import boto3
+from dotenv import load_dotenv
+from botocore.exceptions import ClientError
+from io import BytesIO
+
+# Load environment variables
+load_dotenv()
+
+# S3 Configuration
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_REGION = os.getenv('AWS_REGION')
+
+# Initialize S3 client
+s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 # Training configuration
 BATCH_SIZE = 32
@@ -20,6 +34,36 @@ LEARNING_RATE = 1e-4
 LORA_LEARNING_RATE = 1e-3  # Higher learning rate for LoRA parameters
 LORA_RANK = 8
 USE_LORA = True
+
+def load_pkl_from_s3(bucket_name, key):
+    """Load pickle data from S3"""
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+        pkl_data = pickle.loads(response['Body'].read())
+        return pkl_data
+    except ClientError as e:
+        print(f"Error loading pickle from S3 {key}: {e}")
+        raise
+
+def save_model_to_s3(model_state_dict, bucket_name, key):
+    """Save PyTorch model state dict to S3"""
+    try:
+        # Serialize model to bytes
+        model_buffer = BytesIO()
+        torch.save(model_state_dict, model_buffer)
+        model_buffer.seek(0)
+        
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=model_buffer.getvalue()
+        )
+        print(f"Successfully saved model to s3://{bucket_name}/{key}")
+        return True
+    except Exception as e:
+        print(f"Error saving model to S3 {key}: {e}")
+        return False
 
 def evaluate(model, dataloader, device):
     model.eval()
@@ -53,6 +97,7 @@ def evaluate(model, dataloader, device):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Loading data from S3 bucket: {S3_BUCKET_NAME}")
     
     # Initialize MLflow tracker
     mlflow_tracker = MLflowTracker(
@@ -91,11 +136,10 @@ def main():
         processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
         
-        # Load training data (separate file)
-        with open("modelfactory/data/train_data.pkl", "rb") as f:
-            data = pickle.load(f)
+        # Load training data from S3
+        data = load_pkl_from_s3(S3_BUCKET_NAME, "processed/train.pkl")
         
-        print(f"Loaded {len(data)} training samples")
+        print(f"Loaded {len(data)} training samples from S3")
         
         # Create dataset
         dataset = EngagementDataset(data, processor, tokenizer)
@@ -208,15 +252,13 @@ def main():
                 best_val_mae = val_mae
                 best_val_r2 = val_r2
                 
-                # Save model checkpoint locally
-                os.makedirs('modelfactory/models', exist_ok=True)
-                model_path = 'modelfactory/models/best_model_lora.pth'
-                torch.save(model.state_dict(), model_path)
+                # Save model to S3
+                model_key = "models/best_model_lora.pth"
+                if save_model_to_s3(model.state_dict(), S3_BUCKET_NAME, model_key):
+                    print(f'  New best model saved to S3! MAE: {val_mae:.4f}, R²: {val_r2:.4f}')
                 
                 # Log checkpoint to MLflow
                 mlflow_tracker.log_model_checkpoint(model, f"best_model_epoch_{epoch+1}.pth")
-                
-                print(f'  New best model saved! MAE: {val_mae:.4f}, R²: {val_r2:.4f}')
                 
                 # Log best metrics
                 mlflow_tracker.log_metrics({
@@ -244,13 +286,6 @@ def main():
             model_path="final_model"
         )
         
-        # Log the best model file as artifact
-        if os.path.exists('modelfactory/models/best_model_lora.pth'):
-            mlflow_tracker.log_artifact_from_file(
-                'modelfactory/models/best_model_lora.pth',
-                'model_checkpoints'
-            )
-        
         # Log training summary
         summary_text = f"""
         Training Summary:
@@ -262,6 +297,7 @@ def main():
         Validation Samples: {val_size}
         Device: {device}
         Model: CLIP + LoRA (rank={LORA_RANK})
+        Model saved to: s3://{S3_BUCKET_NAME}/models/best_model_lora.pth
         """
         
         mlflow_tracker.log_text_artifact(summary_text, "training_summary.txt")
@@ -269,6 +305,7 @@ def main():
         print(f'\nTraining completed!')
         print(f'Best validation MAE: {best_val_mae:.4f}')
         print(f'Best validation R²: {best_val_r2:.4f}')
+        print(f'Model saved to S3: s3://{S3_BUCKET_NAME}/models/best_model_lora.pth')
         print(f'MLflow run ID: {run.info.run_id}')
 
 if __name__ == "__main__":

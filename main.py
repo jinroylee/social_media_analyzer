@@ -7,10 +7,9 @@ import uvicorn
 from src.config import settings
 
 if __name__ == "__main__":
+    # Use the new get_uvicorn_config method for better configuration
+    config = settings.get_uvicorn_config()
     uvicorn.run(
         "src.app:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.RELOAD,
-        log_level=settings.LOG_LEVEL
+        **config
     )
