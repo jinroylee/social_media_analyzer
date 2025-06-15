@@ -3,7 +3,11 @@ Configuration settings for the Social Media Engagement Prediction API.
 """
 
 import os
-from typing import List
+from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class Settings:
     """Application settings."""
@@ -20,9 +24,16 @@ class Settings:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
     
     # Model Settings
-    MODEL_PATH: str = os.getenv("MODEL_PATH", "modelfactory/models/best_model_lora.pth")
+    MODEL_PATH: str = os.getenv("MODEL_PATH", "models/best_model_lora.pth")
     USE_LORA: bool = os.getenv("USE_LORA", "true").lower() == "true"
     LORA_RANK: int = int(os.getenv("LORA_RANK", "8"))
+    
+    # S3 Model Settings
+    USE_S3_MODEL: bool = os.getenv("USE_S3_MODEL", "false").lower() == "true"
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "socialmediaanalyzer")
+    S3_MODEL_KEY: str = os.getenv("S3_MODEL_KEY", "models/best_model_lora.pth")
+    S3_LOCAL_MODEL_PATH: str = os.getenv("S3_LOCAL_MODEL_PATH", "models/s3/best_model_lora.pth")
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     
     # CLIP Model Settings
     CLIP_MODEL_NAME: str = os.getenv("CLIP_MODEL_NAME", "openai/clip-vit-large-patch14")
@@ -44,6 +55,15 @@ class Settings:
     
     # Device Settings
     FORCE_CPU: bool = os.getenv("FORCE_CPU", "false").lower() == "true"
+    
+    def get_uvicorn_config(self) -> Dict[str, Any]:
+        """Get uvicorn configuration dictionary."""
+        return {
+            "host": self.HOST,
+            "port": self.PORT,
+            "reload": self.RELOAD,
+            "log_level": self.LOG_LEVEL.lower()
+        }
 
 # Create global settings instance
 settings = Settings() 
