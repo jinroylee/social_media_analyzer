@@ -1,5 +1,5 @@
 # Multi-stage build for efficient Docker image
-FROM python:3.11-slim as builder
+FROM --platform=linux/amd64 python:3.11-slim as builder
 
 # Set build arguments
 ARG DEBIAN_FRONTEND=noninteractive
@@ -19,7 +19,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Set up Python environment
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    UV_CACHE_DIR=/tmp/uv-cache
+    UV_CACHE_DIR=/tmp/uv-cache \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Set working directory for build
 WORKDIR /app
@@ -31,18 +33,29 @@ COPY pyproject.toml uv.lock ./
 COPY README.md ./
 COPY src/ ./src/
 COPY __init__.py ./
+COPY modelfactory/ ./modelfactory/
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-dev
+# Install dependencies using uv, then replace PyTorch with CPU-only version
+RUN uv sync --frozen --no-dev && \
+    # Remove CUDA PyTorch and install CPU-only version to save ~1GB
+    /app/.venv/bin/pip uninstall -y torch torchvision && \
+    /app/.venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-# Production stage
-FROM python:3.11-slim as production
+# Clean up build artifacts to reduce layer size
+RUN find /app/.venv -name "*.pyc" -delete && \
+    find /app/.venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -name "*.pyo" -delete && \
+    find /app/.venv -name "*.pyd" -delete && \
+    find /app/.venv -name "*.so" -exec strip {} \; 2>/dev/null || true
+
+# Production stage - use even smaller base image
+FROM --platform=linux/amd64 python:3.11-slim as production
 
 # Set build arguments
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install runtime system dependencies
-RUN apt-get update && apt-get install -y \
+# Install only essential runtime system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libglib2.0-0 \
     libsm6 \
@@ -51,7 +64,8 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get clean \
+    && apt-get autoremove -y
 
 # Install uv in production stage
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -68,7 +82,8 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8000 \
     RELOAD=false \
     LOG_LEVEL=info \
-    FORCE_CPU=false
+    FORCE_CPU=true \
+    PIP_NO_CACHE_DIR=1
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -76,11 +91,13 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Set working directory
 WORKDIR /app
 
-# Copy application code
-COPY --chown=appuser:appuser . .
+# Copy application code (only necessary files)
+COPY --chown=appuser:appuser main.py ./
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser modelfactory/ ./modelfactory/
 
-# Create necessary directories and set permissions
-RUN mkdir -p /app/modelfactory/models && \
+# Create necessary directories for models
+RUN mkdir -p /app/models && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user

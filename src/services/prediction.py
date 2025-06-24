@@ -20,10 +20,12 @@ class PredictionService:
         self.model_path = model_path or settings.MODEL_PATH
         self.s3_client = None
         
+        
         # Initialize S3 client if needed
         if settings.USE_S3_MODEL:
             try:
                 self.s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
+                print("S3 client initialized successfully")
             except Exception as e:
                 print(f"Warning: Failed to initialize S3 client: {e}")
                 print("Falling back to local model loading")
@@ -175,10 +177,10 @@ class PredictionService:
         try:
             with torch.no_grad():
                 engagement_score = self.model(
-                    model_inputs['pixel_values'],
-                    model_inputs['input_ids'],
-                    model_inputs['attention_mask'],
-                    model_inputs['sentiment_tensor']
+                    image=model_inputs['pixel_values'],
+                    input_ids=model_inputs['input_ids'],
+                    attention_mask=model_inputs['attention_mask'],
+                    sentiment=model_inputs['sentiment_tensor']
                 )
                 return engagement_score.item()
                 

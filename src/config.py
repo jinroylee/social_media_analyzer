@@ -6,8 +6,24 @@ import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Get the directory containing this config file
+CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to the project root (since config.py is in src/)
+PROJECT_ROOT = os.path.dirname(CONFIG_DIR)
+# Path to .env file in project root
+ENV_FILE_PATH = os.path.join(PROJECT_ROOT, '.env')
+
+# Load environment variables from .env file with explicit path
+load_dotenv(ENV_FILE_PATH)
+
+# Debug: Print if .env file was found
+if os.path.exists(ENV_FILE_PATH):
+    print(f"✓ Loaded .env file from: {ENV_FILE_PATH}")
+else:
+    print(f"⚠ .env file not found at: {ENV_FILE_PATH}")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Config file location: {CONFIG_DIR}")
+    print(f"Project root: {PROJECT_ROOT}")
 
 class Settings:
     """Application settings."""
