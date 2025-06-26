@@ -40,16 +40,16 @@ class Settings:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
     
     # Model Settings
-    MODEL_PATH: str = os.getenv("MODEL_PATH", "models/best_model_lora.pth")
+    MODEL_PATH: str = os.getenv("MODEL_PATH", "model/weights/best_model_lora.pth")
     USE_LORA: bool = os.getenv("USE_LORA", "true").lower() == "true"
     LORA_RANK: int = int(os.getenv("LORA_RANK", "8"))
     
     # S3 Model Settings
-    USE_S3_MODEL: bool = os.getenv("USE_S3_MODEL", "false").lower() == "true"
+    USE_S3_MODEL: bool = os.getenv("USE_S3_MODEL", "true").lower() == "true"
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "socialmediaanalyzer")
     S3_MODEL_KEY: str = os.getenv("S3_MODEL_KEY", "models/best_model_lora.pth")
-    S3_LOCAL_MODEL_PATH: str = os.getenv("S3_LOCAL_MODEL_PATH", "models/s3/best_model_lora.pth")
-    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    S3_LOCAL_MODEL_PATH: str = os.getenv("S3_LOCAL_MODEL_PATH", "model/weights/s3/best_model_lora.pth")
+    AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-2")
     
     # CLIP Model Settings
     CLIP_MODEL_NAME: str = os.getenv("CLIP_MODEL_NAME", "openai/clip-vit-large-patch14")

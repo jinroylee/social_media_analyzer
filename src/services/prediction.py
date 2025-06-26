@@ -3,7 +3,7 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from typing import Dict, Any
-from modelfactory.models.clip_regressor import CLIPEngagementRegressor
+from model.clip_regressor import CLIPEngagementRegressor
 from ..config import settings
 
 class PredictionService:
@@ -78,7 +78,7 @@ class PredictionService:
         # Try local paths
         possible_paths = [
             self.model_path,
-            'modelfactory/models/best_model_lora.pth',
+            'models/weights/best_model_lora.pth',
             'models/best_model_lora.pth',
             'best_model_lora.pth'
         ]
@@ -116,8 +116,8 @@ class PredictionService:
                 if settings.USE_S3_MODEL:
                     # Try alternative S3 paths
                     fallback_s3_keys = [
-                        "models/clip_engagement_model.pt",
-                        "models/local/best_model_lora.pth"
+                        "models/weights/clip_engagement_model.pt",
+                        "models/weights/best_model_lora.pth"
                     ]
                     for key in fallback_s3_keys:
                         try:

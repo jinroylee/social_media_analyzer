@@ -48,7 +48,7 @@ class ModelInfoResponse(BaseModel):
                 "model_info": {
                     "model_type": "CLIPEngagementRegressor",
                     "device": "cuda:0",
-                    "model_path": "modelfactory/models/best_model_lora.pth",
+                    "model_path": "models/weights/best_model_lora.pth",
                     "uses_lora": True,
                     "parameters": 428000000,
                     "trainable_parameters": 2000000

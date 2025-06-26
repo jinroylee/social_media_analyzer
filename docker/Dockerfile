@@ -38,7 +38,7 @@ RUN uv sync --frozen --no-dev --no-install-project && \
     find /app/.venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -name "*.pyo" -delete && \
     find /app/.venv -name "*.pyd" -delete && \
-    find /app/.venv -name "*.so" -exec strip {} \; 2>/dev/null || true && \
+    # find /app/.venv -name "*.so" -exec strip {} \; 2>/dev/null || true && \
     find /app/.venv -name "*.a" -delete && \
     find /app/.venv -name "*.la" -delete && \
     # Remove test files and documentation
@@ -59,7 +59,13 @@ RUN uv sync --frozen --no-dev --no-install-project && \
     find /app/.venv -name "*tensorrt*" -delete 2>/dev/null || true && \
     find /app/.venv -name "*cudnn*" -delete 2>/dev/null || true && \
     # Remove other heavy ML libraries if not needed
-    find /app/.venv -path "*/site-packages/torch/test*" -delete 2>/dev/null || true && \
+    # find /app/.venv -path "*/site-packages/torch/test*" -delete 2>/dev/null || true && \
+    find /app/.venv -type d \( \
+        -path "*/site-packages/*/tests" -o \
+        -path "*/site-packages/*/tests/*" -o \
+        -path "*/site-packages/*/test"  -o \
+        -path "*/site-packages/*/test/*" \
+    \) -prune -exec rm -rf {} + \
     find /app/.venv -path "*/site-packages/torchvision/datasets*" -delete 2>/dev/null || true && \
     # Clear UV cache
     rm -rf /tmp/uv-cache
@@ -101,10 +107,16 @@ ENV PYTHONUNBUFFERED=1 \
     LOG_LEVEL=info \
     FORCE_CPU=true
 
+ENV HF_HOME=/app/hf-cache \
+    TRANSFORMERS_CACHE=/app/hf-cache \
+    HF_HUB_DISABLE_PROGRESS_BARS=1 
+
+RUN mkdir -p /app/hf-cache && chown -R appuser:appuser /app/hf-cache
+
 # Copy application code (minimal necessary files)
 COPY --chown=appuser:appuser main.py ./
 COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser modelfactory/ ./modelfactory/
+COPY --chown=appuser:appuser model/ ./model/
 
 # Create models directory
 RUN mkdir -p /app/models && chown appuser:appuser /app/models

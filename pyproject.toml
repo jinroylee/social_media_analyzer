@@ -64,7 +64,7 @@ Repository = "https://github.com/yourusername/social-media-analyze-microserver.g
 Issues = "https://github.com/yourusername/social-media-analyze-microserver/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src", "modelfactory"]
+packages = ["src", "model"]
 
 [tool.black]
 line-length = 100
