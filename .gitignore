@@ -1,3 +1,4 @@
+DS_Store
 *.pkl
 __pycache__
 *.pth
