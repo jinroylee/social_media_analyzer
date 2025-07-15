@@ -1,179 +1,256 @@
-# Social Media Engagement Prediction Microservice
+# Social Media Engagement Prediction API
 
-A FastAPI-based microservice for predicting engagement on social media posts using AI models.
+A FastAPI-based microservice that predicts social media engagement scores using CLIP (Contrastive Language-Image Pre-training) and sentiment analysis. The API processes text, images, and comments to generate engagement predictions for social media content.
 
-## Overview
+## Features
 
-This project provides a complete pipeline for social media engagement prediction:
+- **Multi-modal Analysis**: Combines text, image, and sentiment analysis for engagement prediction
+- **CLIP Integration**: Uses OpenAI's CLIP model for vision-language understanding
+- **Sentiment Analysis**: Processes comments to extract sentiment features
+- **S3 Model Storage**: Automatically downloads trained models from AWS S3
+- **LoRA Support**: Efficient fine-tuning with Low-Rank Adaptation
+- **Dockerized**: Production-ready containerized deployment
+- **Health Monitoring**: Built-in health checks and model information endpoints
 
-1. **Data Preprocessing**: Clean and extract features from social media data
-2. **Model Training**: Train both baseline (LightGBM) and deep learning (CLIP-based) models
-3. **Serving API**: Deploy models as a FastAPI-based API for real-time predictions
-
-The solution leverages multimodal data (both images and text) to predict engagement metrics on social media posts. The deep learning approach uses OpenAI's CLIP model for understanding both visual and textual content.
-
-## Project Structure
+## Architecture
 
 ```
-social_media_analyze_microserver/
-├── data_preprocessing/
-│   ├── preprocess.py          # Script to clean data and extract features
-│   └── __init__.py
-├── models/
-│   ├── clip_regressor.py      # Definition of CLIPEngagementRegressor model and head
-│   ├── __init__.py
-│   └── lightgbm_model.txt     # (Optional) saved LightGBM model or its parameters
-├── training/
-│   ├── train_lightgbm.py      # Trains and evaluates the LightGBM baseline
-│   ├── train_torch.py         # Trains the PyTorch end-to-end model
-│   ├── evaluate_torch.py      # (Optional) evaluation script for the PyTorch model
-│   └── __init__.py
-├── serving/
-│   ├── app.py                 # FastAPI application
-│   ├── predictor.py           # Helper for model loading and inference (used by app.py)
-│   └── __init__.py
-├── utils/
-│   ├── text_processing.py     # Functions for text cleaning, emoji removal, etc.
-│   ├── metrics.py             # Functions for computing MAE, Spearman, etc.
-│   ├── config.py              # Configuration (hyperparameters, file paths)
-│   └── __init__.py
-├── runpod/
-│   ├── launch_training.sh     # Shell script to set up env and run training on Runpod
-│   ├── launch_server.sh       # Script to launch FastAPI server on Runpod
-│   └── __init__.py
-├── requirements.txt           # Python dependencies for pip
-└── README.md                  # Instructions and project overview
+├── src/
+│   ├── api/
+│   │   └── routes.py           # API endpoint definitions
+│   ├── schemas/
+│   │   ├── request.py          # Request data models
+│   │   └── response.py         # Response data models
+│   ├── services/
+│   │   ├── preprocessing.py    # Text, image, and sentiment processing
+│   │   └── prediction.py       # Model loading and inference
+│   ├── app.py                  # FastAPI application setup
+│   └── config.py               # Configuration management
+├── model/
+│   ├── clip_regressor.py       # CLIP-based engagement prediction model
+│   └── weights/                # Model weights storage
+├── docker/
+│   ├── Dockerfile              # Production container
+│   └── Dockerfile.mlflow       # MLflow container
+├── main.py                     # Application entry point
+└── pyproject.toml              # Dependencies and project metadata
 ```
-
-## Installation
-
-### Prerequisites
-
-- Python 3.9+
-- pip for package installation
-- (Optional) CUDA-compatible GPU for faster training
-
-### Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/social_media_analyze_microserver.git
-   cd social_media_analyze_microserver
-   ```
-
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Create necessary directories:
-   ```bash
-   mkdir -p data/processed
-   mkdir -p data/images
-   mkdir -p models/saved
-   mkdir -p results
-   ```
-
-## Usage
-
-### Data Preprocessing
-
-1. Place your raw social media data in `data/raw_data.csv`
-2. Place images in `data/images/`
-3. Run the preprocessing script:
-   ```bash
-   python data_preprocessing/preprocess.py
-   ```
-
-### Training Models
-
-1. To train the LightGBM baseline model:
-   ```bash
-   python training/train_lightgbm.py
-   ```
-
-2. To train the PyTorch CLIP-based model:
-   ```bash
-   python training/train_torch.py
-   ```
-
-3. To evaluate the trained models:
-   ```bash
-   python training/evaluate_torch.py
-   ```
-
-### Running the API Server
-
-1. Start the FastAPI server:
-   ```bash
-   cd serving
-   uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-   ```
-
-2. Access the API documentation at http://localhost:8000/docs
-
-### Deploying on Runpod
-
-1. To run training on Runpod:
-   ```bash
-   bash runpod/launch_training.sh
-   ```
-
-2. To deploy the server on Runpod:
-   ```bash
-   bash runpod/launch_server.sh
-   ```
 
 ## API Endpoints
 
-- `GET /health`: Health check endpoint
-- `POST /predict`: Make predictions with JSON input
-- `POST /predict_upload`: Make predictions with multipart form data (file upload)
-- `POST /predict_batch`: Make batch predictions
-- `GET /model_info`: Get information about the loaded model
+### Core Endpoints
 
-## Model Architecture
+- **POST** `/api/v1/predict` - Predict engagement score for social media content
+- **GET** `/api/v1/health` - Service health check
+- **GET** `/api/v1/model-info` - Detailed model information
+- **GET** `/` - API documentation redirect
 
-### LightGBM Baseline
+### Prediction Request Format
 
-The LightGBM model uses text-based features extracted from social media posts to predict engagement. This serves as a baseline for comparison with the deep learning approach.
+```json
+{
+    "raw_text": "Check out this amazing sunset! #beautiful #nature",
+    "image_base64": "iVBORw0KGgo...", 
+    "comments": [
+        "Wow, so beautiful!",
+        "Amazing shot!",
+        "Love this!"
+    ]
+}
+```
 
-### CLIP-Based Deep Learning Model
+### Prediction Response Format
 
-The deep learning model uses OpenAI's CLIP architecture to understand both images and text in social media posts:
+```json
+{
+    "engagement_score": 0.75,
+    "sentiment_score": 0.8,
+    "cleaned_text": "check out this amazing sunset beautiful nature"
+}
+```
 
-1. CLIP processes both the image and text, generating embeddings
-2. A custom regression head predicts the engagement score from these embeddings
-3. The model can be fine-tuned on domain-specific data
+## Setup & Installation
 
-## Performance
+### Prerequisites
 
-The models are evaluated using the following metrics:
+- Python 3.10+
+- UV package manager (recommended) or pip
+- AWS credentials (if using S3 model storage)
 
-- Mean Absolute Error (MAE)
-- Root Mean Squared Error (RMSE)
-- Spearman Rank Correlation
-- R^2 Score
+### Local Development
 
-Typically, the CLIP-based model outperforms the LightGBM baseline due to its ability to understand both visual and textual content.
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd social_media_analyzer
+   ```
+
+2. **Install dependencies**
+   ```bash
+   # Using UV (recommended)
+   uv sync
+   
+   # Or using pip
+   pip install -e .
+   ```
+
+3. **Configuration**
+   Create a `.env` file in the project root:
+   ```env
+   # Server Configuration
+   HOST=0.0.0.0
+   PORT=8000
+   LOG_LEVEL=info
+   RELOAD=true
+   
+   # Model Configuration
+   USE_LORA=true
+   LORA_RANK=8
+   FORCE_CPU=false
+   
+   # S3 Configuration (if using S3 model storage)
+   USE_S3_MODEL=true
+   S3_BUCKET_NAME=your-bucket-name
+   S3_MODEL_KEY=models/best_model_lora.pth
+   AWS_REGION=ap-northeast-2
+   
+   # API Limits
+   MAX_TEXT_LENGTH_REQUEST=10000
+   MAX_COMMENTS=1000
+   ```
+
+4. **Run the server**
+   ```bash
+   python main.py
+   ```
+   
+   The API will be available at `http://localhost:8000` with interactive documentation at `http://localhost:8000/docs`.
+
+### Docker Deployment
+
+1. **Build the container**
+   ```bash
+   docker build -f docker/Dockerfile -t social-media-analyzer .
+   ```
+
+2. **Run the container**
+   ```bash
+   docker run -p 8000:8000 \
+     -e AWS_ACCESS_KEY_ID=your-key \
+     -e AWS_SECRET_ACCESS_KEY=your-secret \
+     -e S3_BUCKET_NAME=your-bucket \
+     social-media-analyzer
+   ```
+
+## Model Details
+
+### CLIP Engagement Regressor
+
+The core model combines:
+- **CLIP Vision Encoder**: Processes images to extract visual features
+- **CLIP Text Encoder**: Processes text to extract semantic features  
+- **Sentiment Features**: Aggregated sentiment from comments
+- **Engagement Head**: Multi-layer perceptron for final score prediction
+
+### LoRA Fine-tuning
+
+The model supports Low-Rank Adaptation (LoRA) for efficient fine-tuning:
+- Rank: 8 (configurable)
+- Alpha: 16
+- Target modules: Attention and MLP layers
+- Dropout: 0.1
+
+### S3 Model Storage
+
+Models are automatically downloaded from S3 on startup:
+- Primary path: `models/best_model_lora.pth`
+- Fallback paths for different model versions
+- Local caching to avoid repeated downloads
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `0.0.0.0` | Server host |
+| `PORT` | `8000` | Server port |
+| `LOG_LEVEL` | `info` | Logging level |
+| `USE_LORA` | `true` | Enable LoRA fine-tuning |
+| `LORA_RANK` | `8` | LoRA rank parameter |
+| `USE_S3_MODEL` | `true` | Download model from S3 |
+| `S3_BUCKET_NAME` | `socialmediaanalyzer` | S3 bucket name |
+| `FORCE_CPU` | `false` | Force CPU usage |
+| `MAX_TEXT_LENGTH_REQUEST` | `10000` | Max text length |
+| `MAX_COMMENTS` | `1000` | Max comments per request |
+
+### Model Configuration
+
+- **CLIP Model**: `openai/clip-vit-large-patch14`
+- **Sentiment Model**: `tabularisai/multilingual-sentiment-analysis`
+- **Image Size**: 256x256 pixels
+- **Text Length**: 77 tokens (CLIP standard)
+
+## Development
+
+### Project Structure
+
+- **`src/api/`**: API route definitions and request handling
+- **`src/services/`**: Core business logic (preprocessing, prediction)
+- **`src/schemas/`**: Pydantic models for request/response validation
+- **`model/`**: Custom PyTorch model definitions
+- **`docker/`**: Containerization files
+
+### Key Components
+
+1. **PreprocessingService**: Handles text cleaning, image processing, and sentiment analysis
+2. **PredictionService**: Manages model loading, S3 integration, and inference
+3. **CLIPEngagementRegressor**: Custom PyTorch model combining CLIP with engagement prediction
+
+## Health Monitoring
+
+### Health Check Endpoint
+
+The `/api/v1/health` endpoint provides:
+- Service status (healthy/unhealthy)
+- Model loading status
+- Device information (CPU/GPU)
+
+### Model Information
+
+The `/api/v1/model-info` endpoint returns:
+- Model architecture details
+- Parameter counts
+- LoRA configuration
+- S3 integration status
+
+## Production Considerations
+
+### Performance
+
+- Models cached in memory after first load
+- Automatic GPU utilization when available
+- Batch processing for sentiment analysis
+- Efficient image preprocessing pipeline
+
+### Scalability
+
+- Stateless design for horizontal scaling
+- Docker-ready for container orchestration
+- Health checks for load balancer integration
+- Environment-based configuration
+
+### Security
+
+- Input validation with Pydantic schemas
+- Request size limits
+- Non-root container execution
+- Minimal container image (production build)
 
 ## License
 
-[MIT License](LICENSE)
+[Add your license here]
 
-## Contributors
+## Contributing
 
-- Your Name (@yourusername)
-
-## Acknowledgements
-
-- [OpenAI CLIP](https://github.com/openai/CLIP)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [LightGBM](https://lightgbm.readthedocs.io/)
-- [PyTorch](https://pytorch.org/) 
+[Add contribution guidelines here] 
